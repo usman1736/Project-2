@@ -1,11 +1,39 @@
 import azure.functions as func
+import io
 import logging
 import csv
 import json
 import os
 import time
 
+from azure.storage.blob import BlobClient
+
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+
+
+def _iter_diet_rows():
+    """
+    Local dev: read All_Diets.csv next to this file.
+    Azure (Person 3): set app settings DIET_BLOB_CONTAINER (and optionally
+    DIET_BLOB_NAME) so the function reads the uploaded CSV from Blob Storage.
+    """
+    container = os.environ.get("DIET_BLOB_CONTAINER")
+    blob_name = os.environ.get("DIET_BLOB_NAME", "All_Diets.csv")
+    conn = os.environ.get("AzureWebJobsStorage") or os.environ.get(
+        "DIET_BLOB_CONNECTION_STRING"
+    )
+
+    if container and conn:
+        blob = BlobClient.from_connection_string(
+            conn, container_name=container, blob_name=blob_name
+        )
+        raw = blob.download_blob().readall().decode("utf-8")
+        return csv.DictReader(io.StringIO(raw))
+
+    csv_path = os.path.join(os.path.dirname(__file__), "All_Diets.csv")
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        text = f.read()
+    return csv.DictReader(io.StringIO(text))
 
 
 @app.route(route="analyze")
@@ -14,28 +42,24 @@ def analyze(req: func.HttpRequest) -> func.HttpResponse:
 
     start_time = time.time()
 
-    csv_path = os.path.join(os.path.dirname(__file__), "All_Diets.csv")
-
     averages = {}
 
-    with open(csv_path, newline="", encoding="utf-8") as csvfile:
-        reader = csv.DictReader(csvfile)
+    reader = _iter_diet_rows()
+    for row in reader:
+        diet_type = row["Diet_type"]
 
-        for row in reader:
-            diet_type = row["Diet_type"]
+        if diet_type not in averages:
+            averages[diet_type] = {
+                "Protein": 0.0,
+                "Carbs": 0.0,
+                "Fat": 0.0,
+                "count": 0,
+            }
 
-            if diet_type not in averages:
-                averages[diet_type] = {
-                    "Protein": 0.0,
-                    "Carbs": 0.0,
-                    "Fat": 0.0,
-                    "count": 0
-                }
-
-            averages[diet_type]["Protein"] += float(row["Protein(g)"])
-            averages[diet_type]["Carbs"] += float(row["Carbs(g)"])
-            averages[diet_type]["Fat"] += float(row["Fat(g)"])
-            averages[diet_type]["count"] += 1
+        averages[diet_type]["Protein"] += float(row["Protein(g)"])
+        averages[diet_type]["Carbs"] += float(row["Carbs(g)"])
+        averages[diet_type]["Fat"] += float(row["Fat(g)"])
+        averages[diet_type]["count"] += 1
 
     for diet in averages:
         count = averages[diet]["count"]

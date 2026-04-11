@@ -1,4 +1,13 @@
 (() => {
+  /**
+   * Person 3 (cloud): replace with your deployed Function URL from Azure Portal.
+   * Example: https://diet-analyze-func.azurewebsites.net/api/analyze
+   */
+  const CLOUD_ANALYZE_URL =
+    "https://YOUR-FUNCTION-APP.azurewebsites.net/api/analyze";
+
+  const LOCAL_ANALYZE_URL = "http://localhost:7071/api/analyze";
+
   const els = {
     loadBtn: document.getElementById("loadBtn"),
     selectAllBtn: document.getElementById("selectAllBtn"),
@@ -19,7 +28,18 @@
 
   function resolveFunctionUrl() {
     const params = new URLSearchParams(window.location.search);
-    return params.get("functionUrl") || "http://localhost:7071/api/analyze";
+    const override = params.get("functionUrl");
+    if (override) return override;
+
+    const host = window.location.hostname;
+    const isLocal =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "";
+
+    if (isLocal) return LOCAL_ANALYZE_URL;
+
+    return CLOUD_ANALYZE_URL;
   }
 
   function safeParseJson(respText) {
